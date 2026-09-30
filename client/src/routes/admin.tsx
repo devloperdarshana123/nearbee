@@ -11,6 +11,7 @@ import {
   deleteReview,
 } from "../services/adminService";
 import { getProviders } from "../services/providerService";
+import { getAllDisputes, resolveDispute } from "../services/disputeService";
 import ProtectedRoute from "../components/ProtectedRoute";
 import { resolveAssetUrl } from "../lib/api";
 
@@ -22,7 +23,7 @@ export const Route = createFileRoute("/admin")({
   ),
 });
 
-const tabs = ["Users", "Providers", "Bookings", "Verifications", "Flagged Reviews"] as const;
+const tabs = ["Users", "Providers", "Bookings", "Verifications", "Flagged Reviews", "Disputes"] as const;
 type Tab = (typeof tabs)[number];
 
 function AdminPage() {
@@ -62,6 +63,18 @@ function AdminPage() {
   const deleteReviewMutation = useMutation({
     mutationFn: (id: string) => deleteReview(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "flagged-reviews"] }),
+  });
+
+  const disputesQuery = useQuery({
+    queryKey: ["admin", "disputes"],
+    queryFn: () => getAllDisputes(),
+    enabled: tab === "Disputes",
+  });
+
+  const resolveDisputeMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: "resolved" | "rejected" }) =>
+      resolveDispute(id, status),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "disputes"] }),
   });
 
   const banMutation = useMutation({
@@ -229,6 +242,53 @@ function AdminPage() {
                 </div>
                 {r.comment && <p className="mt-1 text-sm text-[var(--sea-ink-soft)]">{r.comment}</p>}
                 <p className="mt-1 text-xs text-[var(--sea-ink-soft)]">Reason: {r.flagReason}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === "Disputes" && (
+          <div className="space-y-2">
+            {disputesQuery.data?.disputes.length === 0 && (
+              <p className="text-sm text-[var(--sea-ink-soft)]">No disputes raised.</p>
+            )}
+            {disputesQuery.data?.disputes.map((d) => (
+              <div key={d._id} className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-[var(--sea-ink)]">{d.reason}</p>
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${
+                      d.status === "open"
+                        ? "bg-amber-100 text-amber-700"
+                        : d.status === "resolved"
+                          ? "bg-[color-mix(in_oklab,var(--palm)_18%,transparent)] text-[var(--palm)]"
+                          : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {d.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-[var(--sea-ink-soft)]">{d.description}</p>
+                <p className="mt-1 text-xs text-[var(--sea-ink-soft)]">
+                  Raised by {d.raisedBy?.name} · Booking: {d.bookingId?.serviceDescription} (
+                  {d.bookingId?.customerId?.name} → {d.bookingId?.providerId?.userId?.name})
+                </p>
+                {d.status === "open" && (
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={() => resolveDisputeMutation.mutate({ id: d._id, status: "resolved" })}
+                      className="rounded-full bg-[var(--palm)] px-3.5 py-1.5 text-sm font-semibold text-white transition hover:-translate-y-0.5"
+                    >
+                      Mark resolved
+                    </button>
+                    <button
+                      onClick={() => resolveDisputeMutation.mutate({ id: d._id, status: "rejected" })}
+                      className="rounded-full bg-red-600 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:-translate-y-0.5"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

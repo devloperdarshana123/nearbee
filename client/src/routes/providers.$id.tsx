@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@clerk/tanstack-react-start";
-import { getProviderById } from "../services/providerService";
+import { getProviderById, getAvailableSlots, getPriceEstimate } from "../services/providerService";
 import { getReviewsForProvider, reportReview } from "../services/reviewService";
 import { createBooking } from "../services/bookingService";
 import { useMarketplaceAuth } from "../hooks/useMarketplaceAuth";
@@ -33,6 +33,19 @@ function ProviderDetailPage() {
   const [confirmation, setConfirmation] = useState("");
   const [reportedIds, setReportedIds] = useState<string[]>([]);
 
+  const { data: slotsData } = useQuery({
+    queryKey: ["availability", id, form.requestedDate],
+    queryFn: () => getAvailableSlots(id, form.requestedDate),
+    enabled: !!form.requestedDate,
+  });
+
+  const { data: priceEstimate } = useQuery({
+    queryKey: ["price-estimate", providerData?.provider.category, providerData?.provider.location?.city],
+    queryFn: () =>
+      getPriceEstimate(providerData!.provider.category, providerData!.provider.location?.city),
+    enabled: !!providerData?.provider,
+  });
+
   const reportMutation = useMutation({
     mutationFn: (id: string) => reportReview(id),
     onSuccess: (_, id) => setReportedIds((prev) => [...prev, id]),
@@ -47,8 +60,14 @@ function ProviderDetailPage() {
     },
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setForm({ ...form, [e.target.name]: e.target.value });
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    if (name === "requestedDate") {
+      setForm((f) => ({ ...f, requestedDate: value, requestedTime: "" }));
+      return;
+    }
+    setForm((f) => ({ ...f, [name]: value }));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,7 +96,7 @@ function ProviderDetailPage() {
         </div>
         <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center">
           <img
-            src={provider.profilePhoto || "https://placehold.co/96x96"}
+            src={provider.profilePhoto ? resolveAssetUrl(provider.profilePhoto) : "https://placehold.co/96x96"}
             alt={provider.userId?.name}
             className="h-24 w-24 flex-shrink-0 rounded-2xl bg-[var(--chip-line)] object-cover"
           />
@@ -108,6 +127,24 @@ function ProviderDetailPage() {
             {provider.bio}
           </p>
         )}
+
+        {!!provider.workPhotos?.length && (
+          <div className="mt-6 border-t border-[var(--line)] pt-6">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--sea-ink-soft)]">
+              Work gallery
+            </h2>
+            <div className="flex flex-wrap gap-3">
+              {provider.workPhotos.map((p) => (
+                <img
+                  key={p}
+                  src={resolveAssetUrl(p)}
+                  alt="Work sample"
+                  className="h-28 w-28 rounded-xl object-cover"
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-8">
@@ -116,8 +153,16 @@ function ProviderDetailPage() {
 
       {isSignedIn && user?.role === "customer" && (
         <div className="mt-8 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6">
-          <h2 className="mb-4 text-lg font-semibold text-[var(--sea-ink)]">Request a booking</h2>
-          <form onSubmit={handleSubmit} className="space-y-3">
+          <h2 className="mb-1 text-lg font-semibold text-[var(--sea-ink)]">Request a booking</h2>
+          {priceEstimate && priceEstimate.min != null && (
+            <p className="mb-4 text-sm text-[var(--sea-ink-soft)]">
+              💡 Typical price for {provider.category.toLowerCase()}
+              {priceEstimate.scope === "city" ? ` in ${provider.location?.city}` : ""}: ₹
+              {priceEstimate.min}-₹{priceEstimate.max}{" "}
+              <span className="text-xs">(based on {priceEstimate.count} providers)</span>
+            </p>
+          )}
+          <form onSubmit={handleSubmit} className="mt-4 space-y-3">
             <textarea
               name="serviceDescription"
               placeholder="Describe what you need"
@@ -130,19 +175,39 @@ function ProviderDetailPage() {
               <input
                 name="requestedDate"
                 type="date"
+                min={new Date().toISOString().slice(0, 10)}
                 value={form.requestedDate}
                 onChange={handleChange}
                 required
                 className="flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2.5 text-sm"
               />
-              <input
-                name="requestedTime"
-                type="time"
-                value={form.requestedTime}
-                onChange={handleChange}
-                required
-                className="flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2.5 text-sm"
-              />
+              {slotsData?.hasScheduledAvailability ? (
+                <select
+                  name="requestedTime"
+                  value={form.requestedTime}
+                  onChange={handleChange}
+                  required
+                  className="flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2.5 text-sm"
+                >
+                  <option value="" disabled>
+                    {slotsData.slots.length ? "Select a time" : "No slots this day"}
+                  </option>
+                  {slotsData.slots.map((s) => (
+                    <option key={s.time} value={s.time} disabled={!s.available}>
+                      {s.time} {s.available ? "" : "(booked)"}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  name="requestedTime"
+                  type="time"
+                  value={form.requestedTime}
+                  onChange={handleChange}
+                  required
+                  className="flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2.5 text-sm"
+                />
+              )}
             </div>
             {bookingMutation.isError && (
               <p className="text-sm text-red-600">

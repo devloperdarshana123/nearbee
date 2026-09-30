@@ -19,6 +19,7 @@ const analyticsRoutes = require("./routes/analyticsRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
+const disputeRoutes = require("./routes/disputeRoutes");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 
 connectDB();
@@ -57,6 +58,7 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/uploads", uploadRoutes);
+app.use("/api/disputes", disputeRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

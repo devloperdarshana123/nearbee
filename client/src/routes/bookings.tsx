@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getMyBookings, updateBookingStatus } from "../services/bookingService";
 import { createReview } from "../services/reviewService";
 import { uploadFile } from "../services/uploadService";
+import { createDispute } from "../services/disputeService";
 import { useMarketplaceAuth } from "../hooks/useMarketplaceAuth";
 import ProtectedRoute from "../components/ProtectedRoute";
 import EmptyState from "../components/EmptyState";
@@ -120,11 +121,57 @@ function ReviewForm({ bookingId, onDone }: { bookingId: string; onDone: () => vo
   );
 }
 
+function DisputeForm({ bookingId, onDone }: { bookingId: string; onDone: () => void }) {
+  const [reason, setReason] = useState("");
+  const [description, setDescription] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: () => createDispute({ bookingId, reason, description }),
+    onSuccess: onDone,
+  });
+
+  return (
+    <div className="mt-3 space-y-3 rounded-xl border border-red-200 bg-red-50 p-4">
+      <input
+        placeholder="Reason (e.g. Work not completed properly)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm"
+      />
+      <textarea
+        placeholder="Describe what went wrong"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm"
+      />
+      {mutation.isError && (
+        <p className="text-sm text-red-600">
+          {(mutation.error as any)?.response?.data?.message || "Failed to submit dispute"}
+        </p>
+      )}
+      {mutation.isSuccess ? (
+        <p className="text-sm font-medium text-[var(--palm)]">
+          Dispute submitted. Our team will review it soon.
+        </p>
+      ) : (
+        <button
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending || !reason.trim() || !description.trim()}
+          className="rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:opacity-50"
+        >
+          {mutation.isPending ? "Submitting..." : "Submit dispute"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function MyBookingsPage() {
   const { user } = useMarketplaceAuth();
   const queryClient = useQueryClient();
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [chattingId, setChattingId] = useState<string | null>(null);
+  const [disputingId, setDisputingId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["bookings", "my"],
@@ -187,6 +234,18 @@ function MyBookingsPage() {
                   {chattingId === booking._id ? "Hide chat" : "💬 Message"}
                 </button>
                 {chattingId === booking._id && <BookingChat bookingId={booking._id} />}
+
+                {(booking.status === "accepted" || booking.status === "completed") && (
+                  <button
+                    onClick={() => setDisputingId(disputingId === booking._id ? null : booking._id)}
+                    className="ml-3 mt-2 text-sm font-semibold text-red-600 underline"
+                  >
+                    {disputingId === booking._id ? "Cancel" : "⚠️ Report a problem"}
+                  </button>
+                )}
+                {disputingId === booking._id && (
+                  <DisputeForm bookingId={booking._id} onDone={() => {}} />
+                )}
 
                 {user?.role === "provider" && booking.status === "pending" && (
                   <div className="mt-3 flex gap-2">

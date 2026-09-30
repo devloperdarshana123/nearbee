@@ -6,8 +6,10 @@ import {
   createProviderProfile,
   updateProviderProfile,
   submitVerificationDocument,
+  type AvailabilitySlot,
 } from "../services/providerService";
 import { uploadFile } from "../services/uploadService";
+import { resolveAssetUrl } from "../lib/api";
 import { useMarketplaceAuth } from "../hooks/useMarketplaceAuth";
 import ProtectedRoute from "../components/ProtectedRoute";
 import { CATEGORIES } from "../components/ProviderSearch";
@@ -51,6 +53,10 @@ function ProviderDashboardPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
   const [saved, setSaved] = useState("");
+  const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
+  const [profilePhoto, setProfilePhoto] = useState("");
+  const [workPhotos, setWorkPhotos] = useState<string[]>([]);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const isProvider = user?.role === "provider";
 
@@ -80,8 +86,41 @@ function ProviderDashboardPage() {
         lat: (data.location as any)?.geo?.coordinates?.[1],
         lng: (data.location as any)?.geo?.coordinates?.[0],
       });
+      setAvailability(data.availability ?? []);
+      setProfilePhoto(data.profilePhoto || "");
+      setWorkPhotos(data.workPhotos ?? []);
     }
   }, [data]);
+
+  const handleProfilePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoUploading(true);
+    try {
+      const { url } = await uploadFile(file);
+      setProfilePhoto(url);
+    } finally {
+      setPhotoUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleWorkPhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).slice(0, 10 - workPhotos.length);
+    if (files.length === 0) return;
+    setPhotoUploading(true);
+    try {
+      const uploaded = await Promise.all(files.map((f) => uploadFile(f)));
+      setWorkPhotos((prev) => [...prev, ...uploaded.map((u) => u.url)]);
+    } finally {
+      setPhotoUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const removeWorkPhoto = (url: string) => {
+    setWorkPhotos((prev) => prev.filter((p) => p !== url));
+  };
 
   const states = getStatesOfCountry(form.countryCode);
 
@@ -93,7 +132,32 @@ function ProviderDashboardPage() {
       bio: form.bio,
       location: { country, state, city: form.city, area: form.area, lat: form.lat, lng: form.lng },
       priceRange: { min: Number(form.minPrice), max: Number(form.maxPrice) },
+      availability,
+      profilePhoto,
+      workPhotos,
     };
+  };
+
+  const WEEKDAYS = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+  ];
+
+  const addAvailabilitySlot = () => {
+    setAvailability((prev) => [...prev, { day: "Monday", startTime: "09:00", endTime: "17:00" }]);
+  };
+
+  const updateAvailabilitySlot = (index: number, patch: Partial<AvailabilitySlot>) => {
+    setAvailability((prev) => prev.map((slot, i) => (i === index ? { ...slot, ...patch } : slot)));
+  };
+
+  const removeAvailabilitySlot = (index: number) => {
+    setAvailability((prev) => prev.filter((_, i) => i !== index));
   };
 
   const [verificationUploading, setVerificationUploading] = useState(false);
@@ -383,6 +447,124 @@ function ProviderDashboardPage() {
                 className={inputClass}
               />
             </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--sea-ink-soft)]">
+              Profile photo
+            </label>
+            <div className="flex items-center gap-3">
+              <img
+                src={profilePhoto ? resolveAssetUrl(profilePhoto) : "https://placehold.co/64x64"}
+                alt="Profile"
+                className="h-16 w-16 rounded-xl bg-[var(--chip-line)] object-cover"
+              />
+              <label className="cursor-pointer rounded-full border border-dashed border-[var(--chip-line)] px-4 py-2 text-sm font-semibold text-[var(--lagoon-deep)]">
+                {photoUploading ? "Uploading..." : "Upload photo"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleProfilePhotoUpload}
+                  disabled={photoUploading}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--sea-ink-soft)]">
+              Before/After work gallery
+            </label>
+            <p className="mb-2 text-xs text-[var(--sea-ink-soft)]">
+              Show off your best work — customers trust providers with a visible portfolio.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {workPhotos.map((p) => (
+                <div key={p} className="group relative">
+                  <img
+                    src={resolveAssetUrl(p)}
+                    alt="Work"
+                    className="h-20 w-20 rounded-lg object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeWorkPhoto(p)}
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-xs text-white"
+                    aria-label="Remove photo"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {workPhotos.length < 10 && (
+                <label className="flex h-20 w-20 cursor-pointer items-center justify-center rounded-lg border border-dashed border-[var(--chip-line)] text-xs text-[var(--sea-ink-soft)]">
+                  {photoUploading ? "…" : "+ Add"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleWorkPhotosUpload}
+                    disabled={photoUploading}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--sea-ink-soft)]">
+              Weekly availability
+            </label>
+            <p className="mb-2 text-xs text-[var(--sea-ink-soft)]">
+              Customers will see live time slots based on this when booking you.
+            </p>
+            <div className="space-y-2">
+              {availability.map((slot, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <select
+                    value={slot.day}
+                    onChange={(e) => updateAvailabilitySlot(i, { day: e.target.value })}
+                    className="flex-1 rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] px-2 py-1.5 text-sm"
+                  >
+                    {WEEKDAYS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="time"
+                    value={slot.startTime}
+                    onChange={(e) => updateAvailabilitySlot(i, { startTime: e.target.value })}
+                    className="rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] px-2 py-1.5 text-sm"
+                  />
+                  <span className="text-xs text-[var(--sea-ink-soft)]">to</span>
+                  <input
+                    type="time"
+                    value={slot.endTime}
+                    onChange={(e) => updateAvailabilitySlot(i, { endTime: e.target.value })}
+                    className="rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] px-2 py-1.5 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeAvailabilitySlot(i)}
+                    className="flex-shrink-0 text-red-600"
+                    aria-label="Remove slot"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={addAvailabilitySlot}
+              className="mt-2 text-sm font-semibold text-[var(--lagoon-deep)] underline"
+            >
+              + Add time slot
+            </button>
           </div>
 
           {mutation.isError && (

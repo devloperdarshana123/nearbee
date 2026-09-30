@@ -71,6 +71,9 @@ export interface ProviderProfilePayload {
   bio?: string;
   location: { country: string; state: string; city: string; area: string; lat?: number; lng?: number };
   priceRange: { min: number; max: number };
+  availability?: AvailabilitySlot[];
+  profilePhoto?: string;
+  workPhotos?: string[];
 }
 
 export const createProviderProfile = (data: ProviderProfilePayload) => {
@@ -92,6 +95,28 @@ export const createProviderProfile = (data: ProviderProfilePayload) => {
   }
   return api.post<{ provider: Provider }>("/providers", data).then((res) => res.data);
 };
+
+export interface AvailabilitySlot {
+  day: string;
+  startTime: string;
+  endTime: string;
+}
+
+export const getAvailableSlots = (providerId: string, date: string) =>
+  api
+    .get<{ slots: { time: string; available: boolean }[]; hasScheduledAvailability: boolean }>(
+      `/providers/${providerId}/availability`,
+      { params: { date } },
+    )
+    .then((res) => res.data);
+
+export const getPriceEstimate = (category: string, city?: string) =>
+  api
+    .get<{ min: number | null; max: number | null; count: number; scope: string }>(
+      "/providers/price-estimate",
+      { params: { category, city } },
+    )
+    .then((res) => res.data);
 
 export const submitVerificationDocument = (id: string, documentUrl: string) => {
   if (isMockDataEnabled()) {

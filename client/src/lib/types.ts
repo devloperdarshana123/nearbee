@@ -30,6 +30,7 @@ export interface Provider {
     geo?: { type: string; coordinates: [number, number] };
   };
   priceRange: { min: number; max: number };
+  availability?: { day: string; startTime: string; endTime: string }[];
   profilePhoto?: string;
   workPhotos?: string[];
   isVerified: boolean;

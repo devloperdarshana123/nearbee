@@ -8,6 +8,7 @@ import FavoriteButton from "./FavoriteButton";
 import ProviderCardSkeleton from "./ProviderCardSkeleton";
 import EmptyState from "./EmptyState";
 import { getAllCountries, getStatesOfCountry } from "../lib/locations";
+import { resolveAssetUrl } from "../lib/api";
 import type { Provider } from "../lib/types";
 
 const countries = getAllCountries();
@@ -465,7 +466,7 @@ export default function ProviderSearch({
               >
                 <div className="flex items-center gap-3">
                   <img
-                    src={provider.profilePhoto || "https://placehold.co/48x48"}
+                    src={provider.profilePhoto ? resolveAssetUrl(provider.profilePhoto) : "https://placehold.co/48x48"}
                     alt={provider.userId?.name}
                     className="h-12 w-12 rounded-full bg-[var(--chip-line)] object-cover"
                   />

@@ -1,5 +1,29 @@
 const ProviderProfile = require("../models/ProviderProfile");
+const Booking = require("../models/Booking");
 const { buildProviderFilter } = require("../utils/providerFilters");
+
+const DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+const timeToMinutes = (t) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const minutesToTime = (mins) => {
+  const h = Math.floor(mins / 60)
+    .toString()
+    .padStart(2, "0");
+  const m = (mins % 60).toString().padStart(2, "0");
+  return `${h}:${m}`;
+};
 
 const getProviders = async (req, res, next) => {
   try {
@@ -168,10 +192,115 @@ const submitVerificationDocument = async (req, res, next) => {
   }
 };
 
+const getAvailableSlots = async (req, res, next) => {
+  try {
+    const { date } = req.query;
+    if (!date) {
+      return res.status(400).json({ message: "date query param is required (YYYY-MM-DD)" });
+    }
+
+    const provider = await ProviderProfile.findById(req.params.id);
+    if (!provider) {
+      return res.status(404).json({ message: "Provider not found" });
+    }
+
+    if (!provider.availability?.length) {
+      return res.json({ slots: [], hasScheduledAvailability: false });
+    }
+
+    const dayName = DAY_NAMES[new Date(`${date}T00:00:00`).getDay()];
+    const windows = provider.availability.filter((a) => a.day === dayName);
+
+    const slotSet = new Set();
+    windows.forEach(({ startTime, endTime }) => {
+      let mins = timeToMinutes(startTime);
+      const end = timeToMinutes(endTime);
+      while (mins + 60 <= end) {
+        slotSet.add(minutesToTime(mins));
+        mins += 60;
+      }
+    });
+
+    const dayStart = new Date(`${date}T00:00:00`);
+    const dayEnd = new Date(`${date}T23:59:59`);
+    const existingBookings = await Booking.find({
+      providerId: provider._id,
+      requestedDate: { $gte: dayStart, $lte: dayEnd },
+      status: { $in: ["pending", "accepted", "completed"] },
+    });
+    const takenTimes = new Set(existingBookings.map((b) => b.requestedTime));
+
+    const slots = Array.from(slotSet)
+      .sort()
+      .map((time) => ({ time, available: !takenTimes.has(time) }));
+
+    res.json({ slots, hasScheduledAvailability: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getPriceEstimate = async (req, res, next) => {
+  try {
+    const { category, city } = req.query;
+    if (!category) {
+      return res.status(400).json({ message: "category query param is required" });
+    }
+
+    const cityMatch = city
+      ? await ProviderProfile.aggregate([
+          { $match: { category, "location.city": new RegExp(`^${city}$`, "i") } },
+          {
+            $group: {
+              _id: null,
+              avgMin: { $avg: "$priceRange.min" },
+              avgMax: { $avg: "$priceRange.max" },
+              count: { $sum: 1 },
+            },
+          },
+        ])
+      : [];
+
+    let scope = "city";
+    let stats = cityMatch[0];
+
+    if (!stats || stats.count < 2) {
+      const categoryMatch = await ProviderProfile.aggregate([
+        { $match: { category } },
+        {
+          $group: {
+            _id: null,
+            avgMin: { $avg: "$priceRange.min" },
+            avgMax: { $avg: "$priceRange.max" },
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+      stats = categoryMatch[0];
+      scope = "category";
+    }
+
+    if (!stats) {
+      return res.json({ min: null, max: null, count: 0, scope: "none" });
+    }
+
+    res.json({
+      min: Math.round(stats.avgMin * 0.85),
+      max: Math.round(stats.avgMax * 1.15),
+      count: stats.count,
+      scope,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getProviders,
   getProviderById,
   createProviderProfile,
   updateProviderProfile,
   submitVerificationDocument,
+  getAvailableSlots,
+  getPriceEstimate,
 };
